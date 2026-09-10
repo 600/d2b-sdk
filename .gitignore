@@ -1,0 +1,8 @@
+# This tree is replaced wholesale on every sync; these are what a local
+# checkout produces and must never be committed back.
+node_modules/
+dist/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/

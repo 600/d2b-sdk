@@ -1,0 +1,33 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json",
+  "name": "dev.d2b/d2b",
+  "description": "D2B — Spreadsheets for AI Agents: typed, versioned, governed tables from Excel/CSV, with lineage, transforms and reference ingest.",
+  "websiteUrl": "https://docs.d2b.dev",
+  "repository": {
+    "url": "https://github.com/600/d2b-sdk",
+    "source": "github"
+  },
+  "version": "0.1.0",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://d2b.dev/mcp/",
+      "headers": [
+        {
+          "name": "Authorization",
+          "description": "Bearer <D2B personal access token> — mint one in the console or with `d2b login`",
+          "isRequired": true,
+          "isSecret": true,
+          "value": "Bearer {d2b_pat}",
+          "variables": {
+            "d2b_pat": {
+              "description": "D2B personal access token (PAT)",
+              "isRequired": true,
+              "isSecret": true
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

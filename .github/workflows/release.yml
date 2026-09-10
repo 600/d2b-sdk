@@ -1,0 +1,217 @@
+name: Release SDK
+
+# This repository is generated. The source lives in a private monorepo and is
+# synced here on every release; edit it there, not here.
+#
+# Tag-driven: `sdk-py-v0.1.0` publishes d2b-sdk to PyPI, `sdk-ts-v0.1.0`
+# publishes d2b-sdk to npm. The two SDKs version independently. The sync
+# pushes the content and the tag together, so a tag is always on main.
+#
+# Publishing happens from THIS repository rather than the monorepo so that the
+# provenance a reader can check points at a repository they can actually open.
+#
+# Credentials: there are none. Both registries authenticate this workflow by
+# OIDC (trusted publishing), so nothing long-lived is stored in Secrets.
+# One-time owner setup, per registry:
+#   PyPI — the project's Publishing settings: owner `600`,
+#          repository `d2b-sdk`, workflow `release.yml`,
+#          environment `pypi` (the `environment:` below must match).
+#   npm  — the package's Settings → Trusted publisher, same four values with
+#          environment `npm`.
+# Until that exists the publish step fails loudly, which is the intended
+# failure: a release that cannot prove where it came from should not happen.
+#
+# workflow_dispatch is a rehearsal: it builds, checks the metadata and runs
+# `npm publish --dry-run`, but never uploads.
+
+on:
+  push:
+    tags:
+      - "sdk-py-v*"
+      - "sdk-ts-v*"
+  workflow_dispatch:
+    inputs:
+      package:
+        description: "Which SDK to rehearse"
+        required: true
+        type: choice
+        options: [python, typescript]
+      testpypi:
+        description: "python only: actually upload to TestPyPI (needs a pending publisher there too)"
+        required: false
+        default: false
+        type: boolean
+
+# Nothing is granted by default; each job asks for exactly what it needs.
+permissions: {}
+
+concurrency:
+  group: release-sdk-${{ github.ref }}
+  cancel-in-progress: false   # never interrupt an upload
+
+jobs:
+  python:
+    name: PyPI — d2b-sdk
+    if: >-
+      startsWith(github.ref, 'refs/tags/sdk-py-v') ||
+      github.event.inputs.package == 'python'
+    # GitHub-hosted on purpose: this job's OIDC identity is the credential, so
+    # it stays on the runner fleet the identity is issued for.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: pypi
+    permissions:
+      contents: read
+      id-token: write   # the OIDC token IS the credential
+    defaults:
+      run:
+        working-directory: python
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0   # the ancestry check needs history
+
+      - name: The tag must be on main
+        if: github.event_name == 'push'
+        run: |
+          git fetch -q --no-tags origin main
+          git merge-base --is-ancestor HEAD origin/main || {
+            echo "::error::${GITHUB_REF_NAME} is not an ancestor of main — release from main"
+            exit 1
+          }
+
+      - name: The tag must equal the version in the source
+        if: github.event_name == 'push'
+        run: |
+          want="${GITHUB_REF_NAME#sdk-py-v}"
+          have=$(python3 -c "import re,pathlib; print(re.search(r'__version__ = \"([^\"]+)\"', pathlib.Path('d2b/_version.py').read_text()).group(1))")
+          [ "$want" = "$have" ] || {
+            echo "::error::tag says $want, d2b/_version.py says $have — bump one of them"
+            exit 1
+          }
+          echo "releasing d2b-sdk $have"
+
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          enable-cache: false
+
+      # The same lane ci.yml runs. A release is not the place to skip it.
+      - name: Test
+        run: uv run --with pytest --with pyyaml pytest tests -q
+
+      - name: Build
+        run: uv build
+
+      - name: Check the metadata renders on PyPI
+        run: uvx twine check dist/*
+
+      # Trusted publishing only: `always` makes a missing/misconfigured
+      # publisher an error instead of a fallback to some other credential.
+      - name: Publish
+        if: github.event_name == 'push'
+        run: uv publish --trusted-publishing always
+
+      # The one way to exercise the upload path before the upload that counts.
+      # TestPyPI is a separate account with its own pending publisher.
+      - name: Upload to TestPyPI
+        if: github.event_name == 'workflow_dispatch' && inputs.testpypi
+        run: uv publish --publish-url https://test.pypi.org/legacy/ --trusted-publishing always
+
+      - name: Rehearsal summary
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          {
+            echo "## Rehearsal"
+            echo ""
+            echo "Uploaded to TestPyPI: ${{ inputs.testpypi }}"
+            echo ""
+            echo '```'
+            ls -la dist
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  typescript:
+    name: npm — d2b-sdk
+    if: >-
+      startsWith(github.ref, 'refs/tags/sdk-ts-v') ||
+      github.event.inputs.package == 'typescript'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: npm
+    permissions:
+      contents: read
+      id-token: write
+    defaults:
+      run:
+        working-directory: typescript
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: The tag must be on main
+        if: github.event_name == 'push'
+        run: |
+          git fetch -q --no-tags origin main
+          git merge-base --is-ancestor HEAD origin/main || {
+            echo "::error::${GITHUB_REF_NAME} is not an ancestor of main — release from main"
+            exit 1
+          }
+
+      - name: The tag must equal the version in package.json
+        if: github.event_name == 'push'
+        run: |
+          want="${GITHUB_REF_NAME#sdk-ts-v}"
+          have=$(node -p "require('./package.json').version")
+          [ "$want" = "$have" ] || {
+            echo "::error::tag says $want, package.json says $have — bump one of them"
+            exit 1
+          }
+          echo "releasing d2b-sdk $have"
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: typescript/package-lock.json
+
+      - name: Install
+        run: npm ci --no-audit --no-fund
+
+      # Same lane as ci.yml — plus the test that ties VERSION to package.json,
+      # which is what stops a tag from shipping a stale attribution header.
+      - name: Typecheck & test
+        run: |
+          npm run typecheck
+          npm test
+
+      - name: Build
+        run: npm run build
+
+      # setup-node's bundled npm predates OIDC trusted publishing (needs
+      # 11.5.1+), so the publisher upgrades itself rather than the toolchain.
+      # Bounded on both sides: npm 12 requires Node >= 22.22.2 and this job
+      # runs the Node ci.yml tests on, so `@latest` would die here, before
+      # Publish. The 11.x line satisfies OIDC and supports Node 20.17+.
+      - name: npm with trusted publishing
+        run: npm install -g 'npm@^11'
+
+      # npm configures a trusted publisher on an EXISTING package, so the very
+      # first publish of a new name has no OIDC identity to present. Set the
+      # NPM_TOKEN secret (granular, publish scope) for that one release —
+      # everything above still gates it — then configure the trusted publisher
+      # and DELETE the secret. With no secret this is pure OIDC.
+      - name: Publish
+        if: github.event_name == 'push'
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -n "${NPM_TOKEN:-}" ]; then
+            echo "::notice::bootstrap publish with NPM_TOKEN — delete the secret once the trusted publisher exists"
+            echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" >> ~/.npmrc
+          fi
+          npm publish --provenance --access public
+
+      - name: Rehearse the publish
+        if: github.event_name == 'workflow_dispatch'
+        run: npm publish --dry-run --access public

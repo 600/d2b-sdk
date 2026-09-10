@@ -1,0 +1,50 @@
+{
+  "name": "d2b-sdk",
+  "version": "0.1.0",
+  "description": "D2B TypeScript SDK — Spreadsheets for AI Agents",
+  "license": "MIT",
+  "homepage": "https://docs.d2b.dev",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/600/d2b-sdk.git",
+    "directory": "typescript"
+  },
+  "bugs": {
+    "url": "https://github.com/600/d2b-sdk/issues"
+  },
+  "keywords": [
+    "d2b",
+    "spreadsheet",
+    "excel",
+    "duckdb",
+    "agents",
+    "mcp",
+    "llm",
+    "etl"
+  ],
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "prepublishOnly": "npm run build"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0",
+    "vitest": "^4.1.9"
+  }
+}
