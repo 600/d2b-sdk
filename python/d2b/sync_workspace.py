@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import json
 import re
+import stat
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
@@ -117,10 +118,25 @@ def dir_for(title: str, workbook_id: str, claimed: set[str]) -> str:
     return candidate
 
 
+def _validate_workspace_path(path: Path) -> None:
+    try:
+        mode = path.lstat().st_mode
+    except FileNotFoundError:
+        return
+    if stat.S_ISLNK(mode):
+        raise SyncError(f"unsafe workspace path is a symbolic link: {path}")
+    if not stat.S_ISDIR(mode):
+        raise SyncError(f"unsafe workspace path is not a directory: {path}")
+
+
 def workbook_root(root: Path, d: str) -> Path:
     if not _valid_dir(d):
         raise SyncError(f"unsafe workbook directory name {d!r}")
-    return root / WORKBOOKS_DIR / d
+    base = root / WORKBOOKS_DIR
+    wb_root = base / d
+    for path in (base, wb_root):
+        _validate_workspace_path(path)
+    return wb_root
 
 
 # ── identity headers ──────────────────────────────────────────────────────────
@@ -234,6 +250,12 @@ def pull_workspace(
     remote_ids = {w["id"] for w in remote}
     stale = sorted(d for d, e in entries.items() if e["id"] not in remote_ids)
 
+    # Validate every ledger-derived path before starting any worker. A bad
+    # repository must not allow some workbooks to land before another path is
+    # found to escape through a symlink.
+    for d, _ in targets:
+        workbook_root(root, d)
+
     def one(d: str, wbk: dict[str, Any]) -> tuple[str, dict[str, Any]]:
         wb_root = workbook_root(root, d)
         try:
@@ -295,6 +317,8 @@ def _remove_tree(p: Path) -> None:
 
 def _unlisted_dirs(root: Path, ledger: dict[str, Any]) -> list[str]:
     base = root / WORKBOOKS_DIR
+    # Validate the shared parent even when the ledger is empty.
+    _validate_workspace_path(base)
     if not base.exists():
         return []
     known = {d.casefold() for d in ledger["workbooks"]}

@@ -206,6 +206,72 @@ def test_push_refuses_unknown_directories_and_foreign_headers(tmp_path, capsys):
     assert rc == 2 and out["header_mismatches"][0]["file"] == "transforms/copied.sql"
 
 
+@pytest.mark.parametrize("link_workbooks_dir", [False, True])
+@pytest.mark.parametrize("command", ["pull", "push", "status"])
+def test_workspace_commands_refuse_symlinked_path_ancestors(
+    tmp_path, capsys, link_workbooks_dir, command,
+):
+    root = tmp_path / "repo"
+    outside = tmp_path / "outside"
+    root.mkdir()
+    outside.mkdir()
+    directory = "Sales--3f9a1c2d"
+    (root / "d2b.json").write_text(json.dumps({
+        "workspace_id": WS,
+        "workbooks": {directory: {"id": WB_A, "title": "Sales"}},
+    }))
+    if link_workbooks_dir:
+        (root / "workbooks").symlink_to(outside, target_is_directory=True)
+        (outside / directory).mkdir()
+    else:
+        (root / "workbooks").mkdir()
+        (root / "workbooks" / directory).symlink_to(outside, target_is_directory=True)
+    sentinel = outside / "sentinel.txt"
+    sentinel.write_text("untouched")
+    outside_entries = sorted(p.relative_to(outside) for p in outside.rglob("*"))
+
+    argv = [command, "--dir", str(root)]
+    if command == "pull":
+        argv.extend(["--workspace", WS])
+    elif command == "status":
+        argv.append("--offline")
+    rc, _, err = _run(_client(_workspace()), argv, capsys)
+
+    assert rc == 1
+    assert "symbolic link" in err
+    assert sentinel.read_text() == "untouched"
+    assert sorted(p.relative_to(outside) for p in outside.rglob("*")) == outside_entries
+
+
+@pytest.mark.parametrize("non_dir_workbooks_dir", [False, True])
+@pytest.mark.parametrize("command", ["pull", "push", "status"])
+def test_workspace_commands_refuse_non_directory_path_ancestors(
+    tmp_path, capsys, non_dir_workbooks_dir, command,
+):
+    root = tmp_path / "repo"
+    root.mkdir()
+    directory = "Sales--3f9a1c2d"
+    (root / "d2b.json").write_text(json.dumps({
+        "workspace_id": WS,
+        "workbooks": {directory: {"id": WB_A, "title": "Sales"}},
+    }))
+    if non_dir_workbooks_dir:
+        (root / "workbooks").write_text("not a directory")
+    else:
+        (root / "workbooks").mkdir()
+        (root / "workbooks" / directory).write_text("not a directory")
+
+    argv = [command, "--dir", str(root)]
+    if command == "pull":
+        argv.extend(["--workspace", WS])
+    elif command == "status":
+        argv.append("--offline")
+    rc, _, err = _run(_client(_workspace()), argv, capsys)
+
+    assert rc == 1
+    assert "not a directory" in err
+
+
 def test_single_workbook_mode_still_works_and_the_two_do_not_mix(tmp_path, capsys):
     ws = _workspace()
     client = _client(ws)

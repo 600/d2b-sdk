@@ -1,5 +1,9 @@
 # D2B SDKs
 
+> **Read-only mirror.** The SDKs are developed in D2B's main repository and
+> published here on each release, so pull requests opened here can't be merged.
+> Issues are welcome — open one and we'll carry it upstream.
+
 Client libraries and the `d2b` CLI for [D2B](https://d2b.dev) — Spreadsheets
 for AI Agents: typed, versioned, governed tables behind an agent-native API.
 
@@ -17,14 +21,6 @@ that means `uvx --from d2b-sdk d2b ...`.
 - [`typescript/`](typescript) — the TypeScript SDK
 - [`mcp-registry/`](mcp-registry) — the MCP Registry manifest for the hosted server
 - [`openapi.json`](openapi.json) — the OpenAPI 3.1 description the SDKs are built against
-
-## This repository is generated
-
-The SDKs are authored in D2B's main repository and synced here as a snapshot on
-each release, so **pull requests against these files cannot be merged here**.
-Issues and discussion are very welcome — please open an issue and we will carry
-the change upstream. Packages are published from this repository, so the
-provenance on PyPI and npm points at code you can read.
 
 ## License
 
