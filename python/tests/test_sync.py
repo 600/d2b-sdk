@@ -437,6 +437,66 @@ def test_pull_ignores_symlinks_the_section_never_reads(tmp_path, capsys):
     assert (tmp_path / "transforms/a.sql").read_text(encoding="utf-8").strip() == T_SRC
 
 
+def test_pull_refuses_to_write_through_a_dangling_manifest_symlink(tmp_path, capsys):
+    """``d2b.json`` gets the same treatment as a section file. A *dangling*
+    link is the dangerous shape: ``exists()`` calls it absent, so the pull
+    would take the directory for un-synced and create the link's target."""
+    root = tmp_path / "repo"
+    root.mkdir()
+    victim = tmp_path / "outside.json"
+    os.symlink("../outside.json", root / "d2b.json")
+
+    rc, _, err = _run(_client(FakeServer([_remote("a")])),
+                      ["pull", "--workbook", WB, "--dir", str(root)], capsys)
+
+    assert rc == 1 and "refusing symbolic link for d2b.json" in err
+    assert not victim.exists()
+
+
+def test_pull_refuses_to_write_through_a_manifest_symlink_to_a_real_file(tmp_path, capsys):
+    """The link resolves to a file that would load as a manifest — the read
+    must refuse it too, or the pull rewrites someone else's JSON."""
+    root = tmp_path / "repo"
+    root.mkdir()
+    victim = tmp_path / "outside.json"
+    kept = json.dumps({"workbook_id": WB, "transforms": {}})
+    victim.write_text(kept, encoding="utf-8")
+    os.symlink(victim, root / "d2b.json")
+
+    rc, _, err = _run(_client(FakeServer([_remote("a")])),
+                      ["pull", "--workbook", WB, "--dir", str(root)], capsys)
+
+    assert rc == 1 and "refusing symbolic link for d2b.json" in err
+    assert victim.read_text(encoding="utf-8") == kept
+
+
+def test_push_refuses_to_save_through_a_manifest_symlink(tmp_path, capsys):
+    """A push saves the manifest after every server-side mutation, so the
+    link has to be caught before the first one — nothing reaches the server."""
+    server = FakeServer([_remote("a")])
+    client = _pulled(server, tmp_path, capsys)
+    (tmp_path / "transforms/a.sql").write_text("SELECT 2", encoding="utf-8")
+    victim = tmp_path / "outside.json"
+    victim.write_text("do not replace", encoding="utf-8")
+    (tmp_path / "d2b.json").unlink()
+    os.symlink(victim, tmp_path / "d2b.json")
+
+    rc, _, err = _run(client, ["push", "--dir", str(tmp_path)], capsys)
+
+    assert rc == 1 and "refusing symbolic link for d2b.json" in err
+    assert victim.read_text(encoding="utf-8") == "do not replace"
+    assert server.posts == []
+
+
+def test_manifest_is_replaced_atomically(tmp_path, capsys):
+    """Saved by rename, so an interrupted push leaves the previous manifest
+    rather than a truncated one — and leaves no temporary file behind."""
+    _pulled(FakeServer([_remote("a")]), tmp_path, capsys)
+
+    assert _manifest(tmp_path)["workbook_id"] == WB
+    assert [p.name for p in tmp_path.iterdir() if p.name.startswith(".d2b.json")] == []
+
+
 # ── data: export = branch, push = 3-way merge ────────────────────────────────
 
 

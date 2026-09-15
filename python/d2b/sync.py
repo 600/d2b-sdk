@@ -269,12 +269,74 @@ def _write_file(root: Path, section: str, rel: str, text: str) -> None:
 # ── manifest ──────────────────────────────────────────────────────────────────
 
 
+def _refuse_manifest_symlink(p: Path) -> None:
+    """``d2b.json`` is written in place on every sync — a link would make the
+    sync write through it, so it is refused the way a section file is
+    (``lstat`` sees a dangling link, which ``exists()`` reports as absent)."""
+    if p.is_symlink():
+        raise SyncError(f"refusing symbolic link for {MANIFEST}: {p}")
+
+
+def _manifest_present(root: Path) -> bool:
+    """Whether ``root`` has a ``d2b.json`` to speak of. ``lexists`` so that a
+    symlink counts as present and is reported by the reader, rather than
+    passing for an un-synced directory the way ``exists()`` would."""
+    return os.path.lexists(root / MANIFEST)
+
+
+def _read_manifest(root: Path) -> str | None:
+    """The raw ``d2b.json``, or ``None`` when there is none."""
+    p = root / MANIFEST
+    _refuse_manifest_symlink(p)
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        fd = os.open(p, flags)
+    except FileNotFoundError:
+        return None
+    except OSError as exc:  # ELOOP: a link swapped in since the check above
+        raise SyncError(f"cannot safely read {p}: {exc}") from exc
+    with os.fdopen(fd, "r", encoding="utf-8") as f:
+        if not stat.S_ISREG(os.fstat(f.fileno()).st_mode):
+            raise SyncError(f"refusing non-regular file: {p}")
+        return f.read()
+
+
+def _write_manifest(root: Path, text: str) -> None:
+    """Replace ``d2b.json`` atomically. ``os.replace`` renames onto the path
+    itself rather than following it, and a push that dies between two of its
+    saves leaves the previous manifest rather than a truncated one.
+
+    ``O_CREAT | O_EXCL`` with an explicit mode rather than ``tempfile``: the
+    manifest is committed like any other file in the repository, so it wants
+    the umask's permissions, and reading the umask is not thread-safe — a
+    workspace pull saves a manifest per worker."""
+    p = root / MANIFEST
+    _refuse_manifest_symlink(p)
+    tmp = p.with_name(f".{MANIFEST}.{os.getpid()}.tmp")
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    try:
+        fd = os.open(tmp, flags, 0o666)
+    except OSError as exc:
+        raise SyncError(f"cannot safely write {p}: {exc}") from exc
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+        os.replace(tmp, p)
+    except OSError as exc:
+        tmp.unlink(missing_ok=True)
+        raise SyncError(f"cannot safely write {p}: {exc}") from exc
+    except BaseException:                    # Ctrl-C mid-write leaves no litter
+        tmp.unlink(missing_ok=True)
+        raise
+
+
 def load_manifest(root: Path) -> dict[str, Any] | None:
     p = root / MANIFEST
-    if not p.exists():
+    raw = _read_manifest(root)
+    if raw is None:
         return None
     try:
-        data = json.loads(p.read_text(encoding="utf-8"))
+        data = json.loads(raw)
     except ValueError as exc:
         raise SyncError(f"{p}: not valid JSON ({exc})") from exc
     if not isinstance(data, dict):
@@ -296,9 +358,7 @@ def save_manifest(root: Path, manifest: dict[str, Any]) -> None:
             ordered[section] = entries
         else:
             ordered.pop(section, None)   # keep the file small until a section is used
-    (root / MANIFEST).write_text(
-        json.dumps(ordered, ensure_ascii=False, indent=2) + "\n", encoding="utf-8",
-    )
+    _write_manifest(root, json.dumps(ordered, ensure_ascii=False, indent=2) + "\n")
 
 
 def resolve_workbook(manifest: dict[str, Any] | None, workbook_id: str | None) -> str:

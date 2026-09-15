@@ -206,6 +206,27 @@ def test_push_refuses_unknown_directories_and_foreign_headers(tmp_path, capsys):
     assert rc == 2 and out["header_mismatches"][0]["file"] == "transforms/copied.sql"
 
 
+@pytest.mark.parametrize("dangling", [False, True])
+def test_workspace_pull_refuses_to_write_through_a_ledger_symlink(tmp_path, capsys, dangling):
+    """The root ledger is a ``d2b.json`` too, and a workspace pull always
+    saves it. A dangling link is the worse half: ``exists()`` reports it
+    absent, so the pull would read the repository as never pulled and then
+    create the link's target outside it."""
+    root = tmp_path / "repo"
+    root.mkdir()
+    victim = tmp_path / "outside.json"
+    kept = None if dangling else "do not replace"
+    if kept is not None:
+        victim.write_text(kept, encoding="utf-8")
+    (root / "d2b.json").symlink_to("../outside.json")
+
+    argv = ["pull", "--workspace", WS, "--dir", str(root)]
+    rc, _, err = _run(_client(_workspace()), argv, capsys)
+
+    assert rc == 1 and "refusing symbolic link for d2b.json" in err
+    assert (victim.read_text(encoding="utf-8") if victim.exists() else None) == kept
+
+
 @pytest.mark.parametrize("link_workbooks_dir", [False, True])
 @pytest.mark.parametrize("command", ["pull", "push", "status"])
 def test_workspace_commands_refuse_symlinked_path_ancestors(

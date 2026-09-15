@@ -37,6 +37,9 @@ from .sync import (
     MANIFEST,
     SyncError,
     _local_files,
+    _manifest_present,
+    _read_manifest,
+    _write_manifest,
     execute_push,
     load_manifest,
     parse_header,
@@ -57,10 +60,11 @@ def load_ledger(root: Path) -> dict[str, Any] | None:
     """The root ledger, or ``None`` when ``root`` is not a workspace
     repository (no ``d2b.json``, or a single-workbook manifest)."""
     p = root / MANIFEST
-    if not p.exists():
+    raw = _read_manifest(root)
+    if raw is None:
         return None
     try:
-        data = json.loads(p.read_text(encoding="utf-8"))
+        data = json.loads(raw)
     except ValueError as exc:
         raise SyncError(f"{p}: not valid JSON ({exc})") from exc
     if not isinstance(data, dict) or "workspace_id" not in data:
@@ -81,9 +85,7 @@ def save_ledger(root: Path, ledger: dict[str, Any]) -> None:
         "workbooks": dict(sorted(ledger.get("workbooks", {}).items())),
     }
     root.mkdir(parents=True, exist_ok=True)
-    (root / MANIFEST).write_text(
-        json.dumps(ordered, ensure_ascii=False, indent=2) + "\n", encoding="utf-8",
-    )
+    _write_manifest(root, json.dumps(ordered, ensure_ascii=False, indent=2) + "\n")
 
 
 def resolve_workspace(ledger: dict[str, Any] | None, workspace_id: str | None) -> str:
@@ -224,7 +226,7 @@ def pull_workspace(
     workbook's conflict refuses that workbook only; the others land and
     the report says which were refused (exit 1 in the CLI)."""
     ledger = load_ledger(root)
-    if ledger is None and (root / MANIFEST).exists():
+    if ledger is None and _manifest_present(root):
         raise SyncError(
             f"{root / MANIFEST} is a single-workbook manifest — a workspace repository needs "
             "its own directory (use --dir).",
@@ -363,7 +365,7 @@ def push_workspace(
     results: dict[str, dict[str, Any]] = {}
     for d, entry in sorted(ledger["workbooks"].items()):
         wb_root = workbook_root(root, d)
-        if not (wb_root / MANIFEST).exists():
+        if not _manifest_present(wb_root):
             results[d] = {"status": "skipped", "id": entry["id"], "reason": "not pulled here"}
             continue
         try:

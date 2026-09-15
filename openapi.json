@@ -8822,7 +8822,7 @@
     },
     "/api/v1/workbooks/{workbook_id}/file-links/{link_id}/versions/{n}/diff": {
       "get": {
-        "description": "Cell-by-cell diff from ``against`` (default: the previous version)\nto ``n``: per sheet, ``{cell, old, new}`` (values only, capped).",
+        "description": "Cell-by-cell diff from ``against`` (default: the previous version)\nto ``n``: per sheet, ``{cell, old, new}`` (values only, capped).\n\nRefused on governed workbooks because raw values cannot enforce column\npolicies.",
         "operationId": "diff_file_link_version_api_v1_workbooks__workbook_id__file_links__link_id__versions__n__diff_get",
         "parameters": [
           {
