@@ -213,6 +213,11 @@ jobs:
       # everything above still gates it — then configure the trusted publisher
       # and DELETE the secret. With no secret this is pure OIDC.
       #
+      # That branch has a deadline: npm removes direct publish for bypass-2FA
+      # granular tokens in January 2027, leaving them private reads and staged
+      # publishes only. A first publish after that is `npm publish` by hand
+      # with an OTP, or staged publishing — not this secret.
+      #
       # --provenance needs this repository to be PUBLIC (npm does not generate
       # provenance from a private source repository, whatever the package's own
       # visibility), so flip the mirror public before the first tag.
