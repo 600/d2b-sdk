@@ -44,7 +44,7 @@ endpoint:
 - problem+json errors raised with their `suggested_fix` attached (written for
   LLMs to read and react to);
 - helpers for the parts that bite: `jobs.wait()`, `tables.iter_rows()`,
-  `webhooks.verify_signature()`.
+  `webhooks.verify_delivery()` (signature + send-time check).
 
 Docs: [docs.d2b.dev](https://docs.d2b.dev) ·
 [API reference](https://docs.d2b.dev/en/api-reference) ·

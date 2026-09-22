@@ -8,7 +8,7 @@ in behaviour, not just types:
 - problem+json errors surfaced as typed exceptions carrying
   ``suggested_fix`` (written for LLMs to read and react);
 - ``jobs.wait()`` for the async ingest flow;
-- ``webhooks.verify_signature()`` for the delivery HMAC.
+- ``webhooks.verify_delivery()`` for the delivery HMAC + send-time check.
 
 Quickstart::
 

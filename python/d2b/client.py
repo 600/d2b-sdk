@@ -870,8 +870,42 @@ class _Webhooks(_Resource):
     @staticmethod
     def verify_signature(secret: str, payload: bytes, signature: str) -> bool:
         """Verify ``X-D2B-Signature`` (= ``sha256=<hex HMAC-SHA256>``)
-        over the RAW request body. Constant-time comparison."""
+        over the RAW request body. Constant-time comparison. Carries no
+        send time, so it cannot tell a replay from the original — prefer
+        :meth:`verify_delivery`."""
         mac = hmac.new(secret.encode("utf-8"), payload, hashlib.sha256)
+        return hmac.compare_digest(f"sha256={mac.hexdigest()}", signature)
+
+    @staticmethod
+    def verify_delivery(
+        secret: str,
+        headers: Any,
+        payload: bytes,
+        *,
+        tolerance_seconds: int = 300,
+        now: float | None = None,
+    ) -> bool:
+        """Verify one delivery attempt: ``X-D2B-Signature-V2`` (=
+        ``sha256=<hex HMAC-SHA256>`` over
+        ``"{X-D2B-Delivery}.{X-D2B-Timestamp}." + raw body``) and that
+        ``X-D2B-Timestamp`` — the send time of this attempt, UNIX seconds —
+        is within ``tolerance_seconds`` of now, so a replayed request fails
+        on its age even with a valid signature. ``headers`` is the request's
+        header mapping (looked up case-insensitively); ``X-D2B-Delivery``
+        is the delivery's id, the same on every retry — the key to process
+        a delivery once. Constant-time comparison."""
+        lowered = {str(k).lower(): v for k, v in headers.items()}
+        try:
+            delivery_id = str(lowered["x-d2b-delivery"])
+            timestamp = int(lowered["x-d2b-timestamp"])
+            signature = str(lowered["x-d2b-signature-v2"])
+        except (KeyError, ValueError):
+            return False
+        current = time.time() if now is None else now
+        if abs(current - timestamp) > tolerance_seconds:
+            return False
+        signed = f"{delivery_id}.{timestamp}.".encode() + payload
+        mac = hmac.new(secret.encode("utf-8"), signed, hashlib.sha256)
         return hmac.compare_digest(f"sha256={mac.hexdigest()}", signature)
 
     @staticmethod

@@ -630,8 +630,57 @@ class Webhooks extends Resource {
   }
 
   /** Verify `X-D2B-Signature` (= `sha256=<hex HMAC-SHA256>` of the RAW
-   * request body) using WebCrypto. */
+   * request body) using WebCrypto. Carries no send time, so it cannot tell
+   * a replay from the original — prefer {@link Webhooks.verifyDelivery}. */
   static async verifySignature(secret: string, payload: Uint8Array, signature: string): Promise<boolean> {
+    return Webhooks.macMatches(secret, payload, signature);
+  }
+
+  /** Verify one delivery attempt: `X-D2B-Signature-V2` (= `sha256=<hex
+   * HMAC-SHA256>` over `"{X-D2B-Delivery}.{X-D2B-Timestamp}." + raw body`)
+   * and that `X-D2B-Timestamp` — the send time of this attempt, UNIX
+   * seconds — is within `toleranceSeconds` (default 300) of now, so a
+   * replayed request fails on its age even with a valid signature.
+   * `headers` is the request's `Headers` or a plain record (names matched
+   * case-insensitively); `X-D2B-Delivery` is the delivery's id, the same
+   * on every retry — the key to process a delivery once. */
+  static async verifyDelivery(
+    secret: string,
+    headers: Headers | Record<string, string | string[] | undefined>,
+    payload: Uint8Array,
+    opts: { toleranceSeconds?: number; now?: number } = {},
+  ): Promise<boolean> {
+    const deliveryId = Webhooks.header(headers, "x-d2b-delivery");
+    const timestampRaw = Webhooks.header(headers, "x-d2b-timestamp");
+    const signature = Webhooks.header(headers, "x-d2b-signature-v2");
+    if (deliveryId === undefined || timestampRaw === undefined || signature === undefined) return false;
+    if (!/^-?\d+$/.test(timestampRaw)) return false;
+    const timestamp = Number(timestampRaw);
+    const now = opts.now ?? Date.now() / 1000;
+    if (Math.abs(now - timestamp) > (opts.toleranceSeconds ?? 300)) return false;
+    const prefix = new TextEncoder().encode(`${deliveryId}.${timestamp}.`);
+    const signed = new Uint8Array(prefix.length + payload.length);
+    signed.set(prefix, 0);
+    signed.set(payload, prefix.length);
+    return Webhooks.macMatches(secret, signed, signature);
+  }
+
+  private static header(
+    headers: Headers | Record<string, string | string[] | undefined>,
+    name: string,
+  ): string | undefined {
+    if (typeof (headers as Headers).get === "function") {
+      return (headers as Headers).get(name) ?? undefined;
+    }
+    for (const [key, value] of Object.entries(headers as Record<string, string | string[] | undefined>)) {
+      if (key.toLowerCase() !== name) continue;
+      if (Array.isArray(value)) return value[0];
+      return value;
+    }
+    return undefined;
+  }
+
+  private static async macMatches(secret: string, data: Uint8Array, signature: string): Promise<boolean> {
     const key = await crypto.subtle.importKey(
       "raw",
       new TextEncoder().encode(secret),
@@ -639,7 +688,7 @@ class Webhooks extends Resource {
       false,
       ["sign"],
     );
-    const mac = new Uint8Array(await crypto.subtle.sign("HMAC", key, payload as BufferSource));
+    const mac = new Uint8Array(await crypto.subtle.sign("HMAC", key, data as BufferSource));
     const hex = Array.from(mac).map((b) => b.toString(16).padStart(2, "0")).join("");
     const expected = `sha256=${hex}`;
     if (expected.length !== signature.length) return false;
