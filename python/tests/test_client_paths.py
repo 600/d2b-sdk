@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 import httpx
 
 from d2b import D2BClient
@@ -99,3 +101,43 @@ def test_sdk_workspaces_list_path() -> None:
     client = D2BClient(api_key="d2b_pat_test", http_client=http)
     assert client.workspaces.list() == [{"id": "wsp-1", "name": "Default"}]
     assert seen == [b"/api/v1/me/workspaces"]
+
+
+def _review_client(responses: list[tuple[int, dict]]):
+    seen: list[tuple[str, bytes, bytes]] = []
+
+    class Transport(httpx.BaseTransport):
+        def handle_request(self, request: httpx.Request) -> httpx.Response:
+            seen.append((request.method, request.url.raw_path, request.content))
+            status, body = responses.pop(0)
+            return httpx.Response(status, json=body)
+
+    http = httpx.Client(base_url="https://api.example.test", transport=Transport())
+    return D2BClient(api_key="d2b_pat_test", http_client=http), seen
+
+
+def test_sdk_review_returns_a_lint_review_directly() -> None:
+    client, seen = _review_client([(200, {"findings": [], "coverage": {}, "counts": {}})])
+    out = client.reviews.run("wb/1", target="sales", judge=False, lang="ja")
+    assert out["findings"] == []
+    method, path, body = seen[0]
+    assert (method, path) == ("POST", b"/api/v1/workbooks/wb%2F1/review")
+    assert json.loads(body) == {"mode": "lint", "judge": False, "lang": "ja", "target": "sales"}
+
+
+def test_sdk_review_follows_the_job_it_is_handed() -> None:
+    client, seen = _review_client([
+        (202, {"job_id": "j1", "kind": "review", "status": "pending", "mode": "agent"}),
+        (200, {"id": "j1", "kind": "review", "status": "running"}),
+        (200, {"id": "j1", "kind": "review", "status": "succeeded", "result": {"findings": [], "summary": "ok"}}),
+    ])
+    out = client.reviews.run("wb", mode="agent", interval=0.0)
+    assert out == {"findings": [], "summary": "ok"}
+    assert [p for _m, p, _b in seen] == [b"/api/v1/workbooks/wb/review", b"/api/v1/jobs/j1", b"/api/v1/jobs/j1"]
+
+
+def test_sdk_review_without_waiting_asks_for_the_job() -> None:
+    client, seen = _review_client([(202, {"job_id": "j2", "kind": "review", "status": "pending", "mode": "lint"})])
+    out = client.reviews.run("wb", wait=False)
+    assert out["job_id"] == "j2" and len(seen) == 1
+    assert json.loads(seen[0][2])["async"] is True

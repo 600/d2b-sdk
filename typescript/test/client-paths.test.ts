@@ -57,3 +57,43 @@ describe("SDK encodes dynamic path segments before request", () => {
     ]);
   });
 });
+
+describe("reviews", () => {
+  function scripted(replies: Array<[number, unknown]>, seen: Array<[string, string, unknown]>): D2BClient {
+    const fetchImpl = (async (input: URL | RequestInfo, init?: RequestInit) => {
+      const url = input instanceof URL ? input : new URL(String(input));
+      seen.push([init?.method ?? "GET", url.pathname, init?.body ? JSON.parse(String(init.body)) : undefined]);
+      const [status, body] = replies.shift()!;
+      return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+    }) as typeof fetch;
+    return new D2BClient({ apiKey: "d2b_pat_test", baseUrl: "https://api.example.test", fetch: fetchImpl });
+  }
+
+  it("returns a lint review directly", async () => {
+    const seen: Array<[string, string, unknown]> = [];
+    const client = scripted([[200, { findings: [], coverage: {}, counts: {} }]], seen);
+    const out = await client.reviews.run("wb/1", { target: "sales", judge: false, lang: "ja" });
+    expect(out.findings).toEqual([]);
+    expect(seen).toEqual([["POST", "/api/v1/workbooks/wb%2F1/review", { mode: "lint", judge: false, lang: "ja", target: "sales" }]]);
+  });
+
+  it("follows the job it is handed", async () => {
+    const seen: Array<[string, string, unknown]> = [];
+    const client = scripted([
+      [202, { job_id: "j1", kind: "review", status: "pending", mode: "agent" }],
+      [200, { id: "j1", status: "running" }],
+      [200, { id: "j1", status: "succeeded", result: { findings: [], summary: "ok" } }],
+    ], seen);
+    const out = await client.reviews.run("wb", { mode: "agent", intervalMs: 0 });
+    expect(out).toEqual({ findings: [], summary: "ok" });
+    expect(seen.map(([, path]) => path)).toEqual(["/api/v1/workbooks/wb/review", "/api/v1/jobs/j1", "/api/v1/jobs/j1"]);
+  });
+
+  it("asks for the job when not waiting", async () => {
+    const seen: Array<[string, string, unknown]> = [];
+    const client = scripted([[202, { job_id: "j2", kind: "review", status: "pending", mode: "lint" }]], seen);
+    const out = await client.reviews.run("wb", { wait: false });
+    expect(out.job_id).toBe("j2");
+    expect((seen[0][2] as { async: boolean }).async).toBe(true);
+  });
+});

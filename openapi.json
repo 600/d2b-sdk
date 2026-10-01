@@ -552,6 +552,7 @@
                 "type": "null"
               }
             ],
+            "default": "auto",
             "title": "Structuring"
           }
         },
@@ -1820,6 +1821,15 @@
             "title": "Id",
             "type": "string"
           },
+          "kind": {
+            "default": "import",
+            "enum": [
+              "import",
+              "review"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
           "phase": {
             "anyOf": [
               {
@@ -2366,6 +2376,286 @@
           "snapshot_id"
         ],
         "title": "RevertResponse",
+        "type": "object"
+      },
+      "ReviewAcceptedResponse": {
+        "additionalProperties": true,
+        "description": "The review continues as a job: poll ``GET /api/v1/jobs/{job_id}``;\nits ``result`` is the :class:`ReviewResponse`.",
+        "properties": {
+          "job_id": {
+            "title": "Job Id",
+            "type": "string"
+          },
+          "kind": {
+            "const": "review",
+            "default": "review",
+            "title": "Kind",
+            "type": "string"
+          },
+          "mode": {
+            "enum": [
+              "lint",
+              "agent"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "running"
+            ],
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "job_id",
+          "status",
+          "mode"
+        ],
+        "title": "ReviewAcceptedResponse",
+        "type": "object"
+      },
+      "ReviewCoverage": {
+        "additionalProperties": true,
+        "properties": {
+          "examined": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Examined",
+            "type": "array"
+          },
+          "skipped": {
+            "default": [],
+            "items": {
+              "additionalProperties": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            "title": "Skipped",
+            "type": "array"
+          },
+          "unsupported_formulas": {
+            "default": 0,
+            "title": "Unsupported Formulas",
+            "type": "integer"
+          }
+        },
+        "title": "ReviewCoverage",
+        "type": "object"
+      },
+      "ReviewFinding": {
+        "additionalProperties": true,
+        "properties": {
+          "confidence": {
+            "title": "Confidence",
+            "type": "number"
+          },
+          "evidence": {
+            "additionalProperties": true,
+            "default": {},
+            "title": "Evidence",
+            "type": "object"
+          },
+          "kind": {
+            "title": "Kind",
+            "type": "string"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "severity": {
+            "enum": [
+              "error",
+              "warning",
+              "info"
+            ],
+            "title": "Severity",
+            "type": "string"
+          },
+          "source": {
+            "enum": [
+              "deterministic",
+              "judgement",
+              "agent"
+            ],
+            "title": "Source",
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "confirmed",
+              "hypothesis",
+              "unverified"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "suggestion": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suggestion"
+          },
+          "target": {
+            "additionalProperties": true,
+            "title": "Target",
+            "type": "object"
+          }
+        },
+        "required": [
+          "kind",
+          "severity",
+          "message",
+          "target",
+          "source",
+          "status",
+          "confidence"
+        ],
+        "title": "ReviewFinding",
+        "type": "object"
+      },
+      "ReviewRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "async": {
+            "default": false,
+            "description": "Answer with the job at once instead of waiting for a lint review.",
+            "title": "Async",
+            "type": "boolean"
+          },
+          "judge": {
+            "default": true,
+            "description": "lint: ask the judgement model whether each computed column's label matches its computation (billed). false uses no model and is free.",
+            "title": "Judge",
+            "type": "boolean"
+          },
+          "lang": {
+            "default": "en",
+            "description": "Language of the messages and the summary (en, ja, …).",
+            "pattern": "^[A-Za-z]{2,3}([-_][A-Za-z0-9]{2,8})?$",
+            "title": "Lang",
+            "type": "string"
+          },
+          "mode": {
+            "default": "lint",
+            "description": "lint: the deterministic checks and the judgement model (seconds to a minute). agent: the review agent on top — explorers, verification of every candidate and a written summary (minutes; always answered with a job).",
+            "enum": [
+              "lint",
+              "agent"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "A table, view or report to review; omitted, the whole workbook.",
+            "title": "Target"
+          }
+        },
+        "title": "ReviewRequest",
+        "type": "object"
+      },
+      "ReviewResponse": {
+        "additionalProperties": true,
+        "properties": {
+          "counts": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "title": "Counts",
+            "type": "object"
+          },
+          "coverage": {
+            "$ref": "#/components/schemas/ReviewCoverage"
+          },
+          "credits": {
+            "default": 0,
+            "title": "Credits",
+            "type": "integer"
+          },
+          "dropped": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dropped"
+          },
+          "elapsed_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Elapsed S"
+          },
+          "findings": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewFinding"
+            },
+            "title": "Findings",
+            "type": "array"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary"
+          },
+          "target": {
+            "additionalProperties": true,
+            "title": "Target",
+            "type": "object"
+          },
+          "usage": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "default": {},
+            "title": "Usage",
+            "type": "object"
+          }
+        },
+        "required": [
+          "target",
+          "findings",
+          "coverage",
+          "counts"
+        ],
+        "title": "ReviewResponse",
         "type": "object"
       },
       "ReviseRegion": {
@@ -9740,6 +10030,91 @@
         ]
       }
     },
+    "/api/v1/workbooks/{workbook_id}/review": {
+      "post": {
+        "description": "Review a table (``target``) or the whole workbook and return\nevidence-backed findings. Read-only.\n\nChecks: the source file's formulas recomputed from its cells\n(overwritten values, broken fill-downs, ranges that stop short,\nsubtotals summed twice); invariants of each table (mixed types or\nspellings in a column, gaps and repeats in an ordered key, values the\ninput never had, totals a plain projection changed, rows that equal the\nsum of the rows above them); and, with ``judge``, whether each computed\ncolumn's label matches its computation. Every finding carries the SQL\nor the cell that found it. ``coverage`` says what was and was not\nexamined.\n\n``mode=lint`` answers ``200`` with the review when it finishes within\nabout 45 seconds, otherwise ``202`` with a job. ``mode=agent`` (or\n``async=true``) answers ``202`` at once. The job's ``result`` is the\nsame body. The judgement model and the agent spend the workbook's\ncredits (``credits``); out of credits, lint runs without the judgement\nmodel and the agent is refused (402). Refused on governed workbooks (403).",
+        "operationId": "review_api_v1_workbooks__workbook_id__review_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workbook_id",
+            "required": true,
+            "schema": {
+              "title": "Workbook Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "cookie",
+            "name": "d2b_access",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "D2B Access"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReviewAcceptedResponse"
+                }
+              }
+            },
+            "description": "The review continues as a job — poll GET /api/v1/jobs/{job_id}."
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Review",
+        "tags": [
+          "v1",
+          "review"
+        ]
+      }
+    },
     "/api/v1/workbooks/{workbook_id}/sheets": {
       "get": {
         "operationId": "list_sheets_api_v1_workbooks__workbook_id__sheets_get",
@@ -10382,7 +10757,7 @@
         ]
       },
       "post": {
-        "description": "Upload a file into the workbook.\n\n``mode=auto`` (default) runs the one-shot extraction pipeline and the\nresponse carries the created source + every artifact it produced.\n``mode=staged`` only lands the bytes (zero interpretation, status\n``registered``) — follow with ``POST .../sources/{name}/analyze``,\nreview/correct the parse spec, then ``POST .../sources/{name}/materialize``.\n\n``async=true`` (auto mode only): the pipeline includes an LLM\nstructuring pass, so for big files the synchronous form can hold\nthe socket for minutes. The async form returns ``202`` with a\n``job_id`` immediately; poll ``GET /api/v1/jobs/{job_id}`` for the\nterminal result (the data events — ``source.materialized``,\n``artifact.updated`` — still arrive on webhooks as usual). Job\nstate is process-local with a 1h retention; a deploy mid-job loses\nthe handle but never the workbook's durable state.\n\nIdempotency: pass ``Idempotency-Key: <opaque>`` to make a retry\nsafe — the cached response is returned for 24 h (for async calls\nthe same ``job_id`` is replayed). Even without the header,\nidentical bytes in the same workbook are de-duplicated: we return\nthe existing source rather than re-ingesting.",
+        "description": "Upload a file into the workbook.\n\n``mode=auto`` (default) runs the one-shot extraction pipeline and the\nresponse carries the created source + every artifact it produced.\n``mode=staged`` only lands the bytes (zero interpretation, status\n``registered``) — follow with ``POST .../sources/{name}/analyze``,\nreview/correct the parse spec, then ``POST .../sources/{name}/materialize``.\n\n``async=true`` (auto mode only): the pipeline includes the\nstructuring pass, so for big files the synchronous form can hold\nthe socket for minutes. The async form returns ``202`` with a\n``job_id`` immediately; poll ``GET /api/v1/jobs/{job_id}`` for the\nterminal result (the data events — ``source.materialized``,\n``artifact.updated`` — still arrive on webhooks as usual). Job\nstate is process-local with a 1h retention; a deploy mid-job loses\nthe handle but never the workbook's durable state.\n\nIdempotency: pass ``Idempotency-Key: <opaque>`` to make a retry\nsafe — the cached response is returned for 24 h (for async calls\nthe same ``job_id`` is replayed). Even without the header,\nidentical bytes in the same workbook are de-duplicated: we return\nthe existing source rather than re-ingesting.",
         "operationId": "post_source_api_v1_workbooks__workbook_id__sources_post",
         "parameters": [
           {

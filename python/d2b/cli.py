@@ -536,15 +536,16 @@ def _parser() -> argparse.ArgumentParser:
     up_st = up.add_mutually_exclusive_group()
     up_st.add_argument(
         "--structure", action="store_true",
-        help="auto mode: run D2B's LLM structuring inline and promote its output over the raw",
+        help="auto mode: structure the file inline and promote the result over the raw "
+             "(the default; spends the workbook's credits)",
     )
     up_st.add_argument(
         "--no-structuring", action="store_true",
-        help="auto mode: land the raw baseline only (~1s) — the default; reshape with your own LLM",
+        help="auto mode: land the raw tables only (~1s, free); reshape with your own LLM",
     )
     up_st.add_argument(
         "--defer-structuring", action="store_true",
-        help="auto mode: return raw now; LLM structuring swaps in later (webhook-visible)",
+        help="auto mode: return raw now; the structured tables swap in later (webhook-visible)",
     )
     up.add_argument("--wait", action="store_true",
                     help="async ingest + poll the job to completion")
@@ -830,6 +831,26 @@ def _parser() -> argparse.ArgumentParser:
     v_rev.add_argument("--workbook", required=True)
 
     # jobs
+    rv = sub.add_parser(
+        "review",
+        help="evidence-backed findings about a table or the whole workbook (read-only)",
+    )
+    rv.add_argument("--workbook", required=True)
+    rv.add_argument("--table", help="review one table, view or report (default: the whole workbook)")
+    rv.add_argument(
+        "--agent", action="store_true",
+        help="add the review agent: every candidate verified, a written summary "
+             "(minutes; billed)",
+    )
+    rv.add_argument(
+        "--no-judge", action="store_true",
+        help="lint without the judgement model (free); ignored with --agent",
+    )
+    rv.add_argument("--lang", default="en", help="language of the messages (en, ja, …)")
+    rv.add_argument("--no-wait", action="store_true",
+                    help="print the job at once; follow it with `d2b jobs wait`")
+    rv.add_argument("--timeout", type=float, default=900.0)
+
     jb = sub.add_parser("jobs", help="async-operation handles")
     jb_sub = jb.add_subparsers(dest="sub", required=True)
     j_get = jb_sub.add_parser("get")
@@ -891,7 +912,7 @@ def _dispatch(client: D2BClient, args: argparse.Namespace) -> None:
             "skip" if args.no_structuring
             else "defer" if args.defer_structuring
             else "auto" if args.structure
-            else None  # server default: raw only
+            else None  # server default: auto
         )
         up_res = client.sources.upload(
             args.workbook, args.file, mode=args.mode, wait=args.wait,
@@ -902,19 +923,26 @@ def _dispatch(client: D2BClient, args: argparse.Namespace) -> None:
         reason = result_body.get("structuring_reason") if isinstance(result_body, dict) else None
         if reason == "unchanged":
             print(
-                "note: LLM structuring ran and found nothing to reshape (or every "
-                "transform failed) — the raw tables are final; no credits charged.",
+                "note: structuring ran and found nothing to reshape — the raw "
+                "tables are final.",
                 file=sys.stderr,
             )
         elif reason == "building":
             print(
-                "note: LLM structuring is still building for this content — retry "
+                "note: structuring is still building for this content — retry "
                 "the upload later to pick up the structured version.",
+                file=sys.stderr,
+            )
+        elif reason == "no_credits":
+            print(
+                "warning: the workbook is out of credits, so this upload was not "
+                "structured — raw tables were served. Add credits and upload "
+                "again, or use --mode staged to shape the data yourself.",
                 file=sys.stderr,
             )
         elif verdict == "raw_fallback":
             print(
-                "warning: LLM structuring did not run for this upload — raw tables "
+                "warning: structuring did not run for this upload — raw tables "
                 "were served (merged headers may be unresolved). Retry the upload "
                 "later to pick up the structured version, or use --mode staged to "
                 "control the parse spec yourself.",
@@ -925,7 +953,7 @@ def _dispatch(client: D2BClient, args: argparse.Namespace) -> None:
             # the final answer, not a transient. Say so, or the caller only
             # finds out from the column names.
             print(
-                "warning: this server has upfront LLM structuring disabled — the "
+                "warning: this server has upfront structuring disabled — the "
                 "raw tables are final (merged headers stay unresolved, all columns "
                 "text). Use --mode staged (analyze → parse-spec → materialize) "
                 "to shape the data yourself.",
@@ -1059,6 +1087,19 @@ def _dispatch(client: D2BClient, args: argparse.Namespace) -> None:
         _emit(client.versions.list(args.workbook))
     elif cmd == "versions" and sub == "revert":
         _emit(client.versions.revert(args.workbook, args.label))
+    elif cmd == "review":
+        review = client.reviews.run(
+            args.workbook, target=args.table, mode="agent" if args.agent else "lint",
+            judge=not args.no_judge, lang=args.lang, wait=not args.no_wait, timeout=args.timeout,
+        )
+        skipped = (review.get("coverage") or {}).get("skipped") or []
+        if skipped:
+            print(
+                f"note: {len(skipped)} check(s) could not run (coverage.skipped) — "
+                "no findings there is not a clean bill.",
+                file=sys.stderr,
+            )
+        _emit(review)
     elif cmd == "jobs" and sub == "get":
         _emit(client.jobs.get(args.job_id))
     elif cmd == "jobs" and sub == "wait":

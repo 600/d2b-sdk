@@ -274,3 +274,34 @@ class TestFileArguments:
         )
         assert rc == 2 and rec.calls == []
         assert err.strip() == "error: file not found: /no/such.sql"
+
+
+class _ReviewRecorder:
+    def __init__(self, result: dict):
+        self.calls: list = []
+        self.reviews = self
+        self._result = result
+
+    def run(self, *a, **kw):
+        self.calls.append((a, kw))
+        return self._result
+
+    def close(self):
+        pass
+
+
+def test_review_command_maps_its_flags(capsys):
+    from d2b.cli import main
+
+    rec = _ReviewRecorder({"findings": [], "coverage": {"skipped": [{"what": "x", "why": "y"}]}})
+    rc = main(["review", "--workbook", "w", "--table", "sales", "--agent", "--lang", "ja"], client=rec)
+    out = capsys.readouterr()
+    assert rc == 0
+    assert rec.calls == [(("w",), {"target": "sales", "mode": "agent", "judge": True, "lang": "ja",
+                                   "wait": True, "timeout": 900.0})]
+    assert json.loads(out.out)["findings"] == []
+    assert "not a clean bill" in out.err
+    rec = _ReviewRecorder({"job_id": "j"})
+    assert main(["review", "--workbook", "w", "--no-judge", "--no-wait"], client=rec) == 0
+    assert rec.calls[0][1] | {} == {"target": None, "mode": "lint", "judge": False, "lang": "en",
+                                    "wait": False, "timeout": 900.0}

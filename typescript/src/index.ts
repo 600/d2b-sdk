@@ -20,7 +20,7 @@
  * The published version. Kept in step with package.json by
  * `test/version.test.ts` — a release bumps both or CI fails.
  */
-export const VERSION = "0.1.0";
+export const VERSION = "0.2.0";
 
 const MUTATING = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 const RETRY_STATUSES = new Set([429, 502, 503, 504]);
@@ -82,6 +82,7 @@ export class D2BClient {
   readonly transforms: Transforms;
   readonly versions: Versions;
   readonly jobs: Jobs;
+  readonly reviews: Reviews;
   readonly sheets: Sheets;
   readonly charts: Charts;
   readonly exportApi: ExportApi;
@@ -106,6 +107,7 @@ export class D2BClient {
     this.transforms = new Transforms(this);
     this.versions = new Versions(this);
     this.jobs = new Jobs(this);
+    this.reviews = new Reviews(this);
     this.sheets = new Sheets(this);
     this.charts = new Charts(this);
     this.exportApi = new ExportApi(this);
@@ -547,6 +549,48 @@ class Jobs extends Resource {
       if (Date.now() > deadline) throw new Error(`job ${jobId} did not finish in time`);
       await sleep(opts.intervalMs ?? 1000);
     }
+  }
+}
+
+class Reviews extends Resource {
+  /**
+   * Review a table, view or report (`target`) or the whole workbook and
+   * return evidence-backed findings. Read-only.
+   *
+   * `mode: "lint"` (default) runs the deterministic checks and, with
+   * `judge`, the judgement model — seconds to a minute. `mode: "agent"`
+   * adds the review agent (verified findings and a written `summary`) —
+   * minutes. The models spend the workbook's credits (`credits`); lint with
+   * `judge: false` is free. `wait: true` (default) returns the review,
+   * polling the job the server hands back for the agent or a long lint;
+   * `wait: false` returns the job at once. `coverage.skipped` lists the
+   * checks that could not run — no findings there is not a clean bill.
+   */
+  async run(
+    workbookId: string,
+    opts: {
+      target?: string;
+      mode?: "lint" | "agent";
+      judge?: boolean;
+      lang?: string;
+      wait?: boolean;
+      timeoutMs?: number;
+      intervalMs?: number;
+    } = {},
+  ): Promise<Json> {
+    const wait = opts.wait ?? true;
+    const body: Json = { mode: opts.mode ?? "lint", judge: opts.judge ?? true, lang: opts.lang ?? "en" };
+    if (opts.target !== undefined) body.target = opts.target;
+    if (!wait) body.async = true;
+    const out = await this.c.request<Json>("POST", `/workbooks/${segment(workbookId)}/review`, { json: body });
+    if (wait && "job_id" in out && !("findings" in out)) {
+      const job = await this.c.jobs.wait(out.job_id as string, {
+        timeoutMs: opts.timeoutMs ?? 900_000,
+        intervalMs: opts.intervalMs ?? 2000,
+      });
+      return job.result as Json;
+    }
+    return out;
   }
 }
 

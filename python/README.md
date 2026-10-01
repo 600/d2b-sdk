@@ -46,9 +46,15 @@ endpoint:
 - helpers for the parts that bite: `jobs.wait()`, `tables.iter_rows()`,
   `webhooks.verify_delivery()` (signature + send-time check).
 
-Docs: [docs.d2b.dev](https://docs.d2b.dev) ·
+Docs: [docs.d2b.dev/en/sdks](https://docs.d2b.dev/en/sdks) ·
+[CLI](https://docs.d2b.dev/en/cli) ·
 [API reference](https://docs.d2b.dev/en/api-reference) ·
 [日本語](https://docs.d2b.dev/ja)
+
+Package: [PyPI](https://pypi.org/project/d2b-sdk/) · Source and issues:
+[github.com/600/d2b-sdk](https://github.com/600/d2b-sdk) (`python/`; a
+read-only mirror of the main repository — issues welcome, pull requests can't
+be merged there).
 
 ## CLI
 

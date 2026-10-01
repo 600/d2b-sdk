@@ -4,4 +4,4 @@
 (``X-D2B-Client`` / ``User-Agent``) derive from it, so a release bumps one
 line and every surface follows.
 """
-__version__ = "0.1.0"
+__version__ = "0.2.0"

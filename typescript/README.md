@@ -26,7 +26,7 @@ The client is a thin skin over the REST API — every method maps to one endpoin
 - problem+json errors raised with their `suggested_fix` attached (written for
   LLMs to read and react to).
 
-Docs: [docs.d2b.dev](https://docs.d2b.dev).
+Docs: [docs.d2b.dev/en/sdks](https://docs.d2b.dev/en/sdks) · Package: [npm](https://www.npmjs.com/package/d2b-sdk) · Source and issues: [github.com/600/d2b-sdk](https://github.com/600/d2b-sdk) (`typescript/`; a read-only mirror of the main repository — issues welcome, pull requests can't be merged there).
 
 ## License
 

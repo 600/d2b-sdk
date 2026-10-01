@@ -130,6 +130,7 @@ class D2BClient:
         self.transforms = _Transforms(self)
         self.versions = _Versions(self)
         self.jobs = _Jobs(self)
+        self.reviews = _Reviews(self)
         self.sheets = _Sheets(self)
         self.export = _Export(self)
         self.charts = _Charts(self)
@@ -329,9 +330,13 @@ class _Sources(_Resource):
         """Upload a file. ``mode="staged"`` lands bytes only (follow with
         analyze → materialize). ``wait=True`` uses the async form and
         polls the job to completion — the friendly default for big
-        files. ``structuring`` (auto mode): "skip" lands the raw baseline
-        only (~1s — BYO-LLM callers reshape with their own model);
-        "defer" lands raw now and swaps the LLM-structured tables in
+        files. ``structuring`` (auto mode): "auto" — the server default —
+        structures the file (each sheet cut into its tables, periods
+        across columns in long form, a report's line items, totals and
+        account tree split apart) and spends the workbook's credits the
+        first time its content is structured; "skip" lands the raw
+        baseline only (~1s, free — BYO-LLM callers reshape with their own
+        model); "defer" lands raw now and swaps the structured tables in
         later (artifact.updated events fire on the swap)."""
         if isinstance(file, (str, Path)):
             content = Path(file).read_bytes()
@@ -784,6 +789,48 @@ class _Jobs(_Resource):
             if time.monotonic() > deadline:
                 raise TimeoutError(f"job {job_id} did not finish within {timeout}s")
             time.sleep(interval)
+
+
+class _Reviews(_Resource):
+    def run(
+        self,
+        workbook_id: str,
+        *,
+        target: str | None = None,
+        mode: str = "lint",
+        judge: bool = True,
+        lang: str = "en",
+        wait: bool = True,
+        timeout: float = 900.0,
+        interval: float = 2.0,
+    ) -> dict:
+        """Review a table, view or report (``target``) or the whole workbook
+        and return evidence-backed findings. Read-only.
+
+        ``mode="lint"`` runs the deterministic checks (the source file's
+        formulas recomputed from its cells, invariants of each table) and,
+        with ``judge``, the judgement model on each computed column's label
+        vs its computation — seconds to a minute. ``mode="agent"`` adds the
+        review agent: explorers, verification of every candidate and a
+        written ``summary`` — minutes. ``lang`` is the language of the
+        messages. The models spend the workbook's credits (``credits``);
+        ``judge=False`` lint is free.
+
+        ``wait=True`` returns the review, polling the job when the server
+        hands one back (always for the agent, and for a lint that runs past
+        the request window). ``wait=False`` returns the job at once —
+        follow it with ``jobs.wait(job["job_id"])``; its ``result`` is the
+        review. ``coverage.skipped`` lists the checks that could not run:
+        no findings there is not a clean bill."""
+        body: dict[str, Any] = {"mode": mode, "judge": judge, "lang": lang}
+        if target is not None:
+            body["target"] = target
+        if not wait:
+            body["async"] = True
+        out = self._c.request("POST", f"/workbooks/{_seg(workbook_id)}/review", json_body=body)
+        if wait and "job_id" in out and "findings" not in out:
+            return self._c.jobs.wait(out["job_id"], timeout=timeout, interval=interval)["result"]
+        return out
 
 
 class _Sheets(_Resource):
